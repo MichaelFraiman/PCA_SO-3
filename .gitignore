@@ -1,5 +1,8 @@
 **/.DS_Store
 keys/
 docs/
+p/
 *_doc.py
 mkdocs.yml
+*.sh
+_*
