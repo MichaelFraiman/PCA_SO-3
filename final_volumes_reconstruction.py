@@ -29,7 +29,7 @@ from scipy.io import loadmat
 
 # ============================== CONFIG ==============================
 
-NN = 64  # grid size N; used to resolve default paths
+NN = 124  # grid size N; used to resolve default paths
 
 # Where your NPZs (created by the global-centering covariance script) live:
 NPZ_DIR = f"mat_converted_N={NN}_matrix"
@@ -47,11 +47,11 @@ NPZ_GLOB = os.path.join(NPZ_DIR, f"top_modes_N={NN}_L=*_*centered_global_by_raw.
 RESCALED_DIR = f"mat_converted_N={NN}"
 
 # Target basenames (without .mat) to reconstruct:
-#TARGETS = ["1avo", "5cpi", "1fzf", "2qtb"]
-TARGETS = ["1dgb"]
+#TARGETS = ["1avo", "1dgb", "5cpi", "1fzf", "2qtb"]
+TARGETS = ["1avo", "1dgb"]
 
 # K values to reconstruct for each target (PCA order across all ℓ,r modes):
-K_LIST = [1, 5, 10, 20, 100, 200, 500]
+K_LIST = [5, 20, 100]
 
 # Output directory:
 OUT_DIR = f"mat_converted_N={NN}_reconstructed_mrc"
@@ -63,7 +63,7 @@ VOXEL_DTYPE = np.float32
 # Parallelization:
 #   -1 → auto (CPU count); on GPU synthesize we force 1 unless you override below.
 #MAX_WORKERS = -1 something is wrong here
-MAX_WORKERS = 12
+MAX_WORKERS = 5
 
 # ====================================================================
 

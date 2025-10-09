@@ -32,7 +32,7 @@ from fle_3d import FLEBasis3D  # your library
 
 # =================== TOP-LEVEL CONFIG ===================
 # Resolution "N" also controls default input/output folder names below.
-N = 64
+N = 124
 DEFAULT_IN_DIR  = f"mat_converted_N={N}"
 DEFAULT_OUT_DIR = f"mat_converted_N={N}_matrix"
 IMAG_TOL = 1e-2      # drop imag if |Im| < 0.01 when printing eigenvalues/vectors

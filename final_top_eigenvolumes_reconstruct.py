@@ -33,11 +33,11 @@ import mrcfile
 TOP_MODES_NPZ = None  # e.g. "mat_converted_N=256_matrix/top_modes_N=256_L=20_K=1000_centered_global_by_raw.npz"
 
 # Option 2: if TOP_MODES_NPZ is None, set NN and auto-glob within the matrix folder
-NN = 64
+NN = 256
 MATRIX_DIR = f"mat_converted_N={NN}_matrix"
 NPZ_GLOB = os.path.join(MATRIX_DIR, f"top_modes_N={NN}_L=*_*centered_global_by_raw.npz")
 
-T_TOP = 30            # how many top eigenvolumes to export
+T_TOP = 50            # how many top eigenvolumes to export
 M_CHOICE = 0          # which m to realize (0 ⇒ center column)
 NORMALIZE = True      # scale each saved volume to max|v|=1
 VOXEL_SIZE = 1.0      # MRC voxel size (units if you have them)
