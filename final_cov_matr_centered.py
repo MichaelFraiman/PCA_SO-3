@@ -2,21 +2,23 @@
 """
 final_cov_matr_centered_global_only.py
 
-What this script does (single variant only):
-  • Builds SO(3)-block second moments S_ell from volumes.
-  • Computes the global mean vector μ for (ℓ=0,m=0) and applies GLOBAL CENTERING:
-        S_0  ←  S_0  − μ μ*
-        S_ℓ  ←  S_ℓ  for ℓ ≥ 1
+Single-variant pipeline (GLOBAL centering only):
+  • Build SO(3)-block second moments S_ell from volumes.
+  • Global centering for ℓ=0 only:    S_0 ← S_0 − μ μ*
   • Eigendecomposition per ℓ (no shrinkage).
-  • Saves:
+  • Save:
         cov_blocks_N=..._L=..._centered_global.npz
         top_modes_N=..._L=..._K=..._centered_global_by_raw.npz
-  • Optionally exports per-volume cumulative energy CSVs (centered_global only):
-        <basename>_coeff_energy_centered_global.csv
+        full_eigs_N=..._L=..._centered_global.npz    (ON by default)
+  • For each volume, export:
+        <basename>_coeff_energy_centered_global.csv  (k, ratio)
+        <basename>_coeffs_centered_global_<all|topK>.npz
+          - per-ℓ eigenbasis coefficients A_ℓ (rows are radial indices)
+          - optional row downselection (keep rows used by global top-K)
 
 Notes:
-  - Only the ℓ=0 block is changed by centering; ℓ≥1 blocks are identical to uncentered.
-  - No per-volume centering, no comparisons, no shrinkage.
+  - Only ℓ=0 changes under global centering; ℓ≥1 are same as uncentered.
+  - Exports apply the same (ℓ=0,m=0) centering used to build S_0.
 """
 
 import os
@@ -24,7 +26,7 @@ import glob
 import numpy as np
 from scipy.io import loadmat
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Tuple, List, Optional
+from typing import Tuple, List, Optional, Dict
 
 from tqdm.auto import tqdm
 from fle_3d import FLEBasis3D  # your library
@@ -32,18 +34,24 @@ from fle_3d import FLEBasis3D  # your library
 
 # =================== TOP-LEVEL CONFIG ===================
 # Resolution "N" also controls default input/output folder names below.
-N = 124
+N = 32
 DEFAULT_IN_DIR  = f"mat_converted_N={N}"
 DEFAULT_OUT_DIR = f"mat_converted_N={N}_matrix"
+
 IMAG_TOL = 1e-2      # drop imag if |Im| < 0.01 when printing eigenvalues/vectors
 TOP_SHOW = 30        # how many global leading eigenpairs to print
 
-# CSV export controls
-EXPORT_CSV = True           # set False to skip per-volume CSV export
-EXPORT_N_JOBS = -1          # -1: all cores; if using GPU solver, consider 1
-# ========================================================
+# CSV/coeff export controls
+EXPORT_CSV           = True           # write <basename>_coeff_energy_centered_global.csv
+EXPORT_COEFFS        = True           # write <basename>_coeffs_centered_global_*.npz
+COEFFS_KEEP_TOPK     = False           # if True, keep only rows that appear in global top-K
+COEFFS_COMPLEX64     = True           # store per-volume A_ℓ as complex64 to save space
+EXPORT_N_JOBS        = -1             # -1: all cores; if using GPU solver, consider 1
+APPLY_CENTERING_IN_EXPORT = True      # subtract μ from (ℓ=0,m=0) before projection
 
-APPLY_CENTERING_IN_EXPORT = True  # subtract μ from (ℓ=0,m=0) before projection
+# Main eigens output
+SAVE_FULL_EIGENDECOMP = True          # <—— now ON by default
+# ========================================================
 
 
 # ----------------------- IO / helpers -----------------------
@@ -89,7 +97,7 @@ def svd_covariance(blocks: np.ndarray, pbar: bool = True):
     """
     blocks: (L, n_rad, n_rad) Hermitian-ish
     returns:
-      eigvals: (L, n_rad)          descending
+      eigvals: (L, n_rad)          descending (per ℓ)
       eigvecs: (L, n_rad, n_rad)   columns are eigenvectors (U from SVD)
     """
     L, n_rad, _ = blocks.shape
@@ -108,11 +116,6 @@ def svd_covariance(blocks: np.ndarray, pbar: bool = True):
 # ----------------------- printing helpers -----------------------
 
 def fmt_number(z, imag_tol: float = IMAG_TOL, prec: int = 6) -> str:
-    """
-    For eigenvalues/vectors:
-      - If complex and |Im| < imag_tol, drop the imag part and print real with 'prec' digits.
-      - Else print as 'a+bi' with 'prec' digits.
-    """
     if isinstance(z, complex) or (hasattr(z, "imag")):
         z = complex(z)
         if abs(z.imag) < imag_tol:
@@ -125,9 +128,6 @@ def vec_to_string(v: np.ndarray, imag_tol: float = IMAG_TOL, prec: int = 6) -> s
     return "[" + ", ".join(fmt_number(val, imag_tol, prec) for val in v) + "]"
 
 def print_topk_global(raw: np.ndarray, vecs: np.ndarray, n_rad: int, top_k_show: int):
-    """
-    Print TOP-K eigenpairs globally (by raw eigenvalues of the centered model).
-    """
     flat = raw.flatten()
     order = np.argsort(flat)[::-1]
     total = raw.size
@@ -141,9 +141,25 @@ def print_topk_global(raw: np.ndarray, vecs: np.ndarray, n_rad: int, top_k_show:
         print(f"  #{rank:02d}  (ℓ={ell}, r={rad})  λ={fmt_number(lam)}")
         print("       u*: ", vec_to_string(u))
 
-# ----------------------- per-volume CSV export (centered_global only) -----------------------
+# ----------------------- per-volume export helpers -----------------------
 
-def export_coeff_energy_centered_global(
+def _build_keep_rows_by_ell(order_flat: np.ndarray, n_rad: int, keep_topK: int) -> Dict[int, np.ndarray]:
+    """
+    Map ℓ -> sorted unique list of radial indices to keep,
+    selecting rows that appear in the global top-K flattening.
+    """
+    chosen = order_flat[:keep_topK]
+    keep: Dict[int, List[int]] = {}
+    for fi in chosen:
+        ell = fi // n_rad
+        rad = fi %  n_rad
+        keep.setdefault(ell, []).append(rad)
+    out: Dict[int, np.ndarray] = {}
+    for ell, rows in keep.items():
+        out[ell] = np.array(sorted(set(rows)), dtype=np.int32)
+    return out
+
+def export_coeff_energy_and_projections_centered_global(
     m_path: str,
     key: str,
     N_vol: int,
@@ -151,20 +167,22 @@ def export_coeff_energy_centered_global(
     eps: float,
     solver: str,
     n_rad: int,
-    eigvecs: np.ndarray,
-    order_flat: np.ndarray,
+    eigvecs: np.ndarray,        # (L, n_rad, n_rad)
+    order_flat: np.ndarray,     # global ordering (descending) of flattened modes
     out_dir: str,
     mu_l0: Optional[np.ndarray] = None,
     apply_centering_in_export: bool = True,
+    save_coeffs: bool = True,
+    coeffs_keep_rows_by_ell: Optional[Dict[int, np.ndarray]] = None,
+    coeffs_complex64: bool = True,
 ) -> bool:
     """
     For one volume:
-      - build FLE coefficients b = step2(step1(vol))  with shape (n_rad, L, 2ℓ+1)
-      - if apply_centering_in_export: center only (ℓ=0,m=0): b[:,0,0] -= μ
-      - project to eigenbasis of the centered model: A_ell = U_ell^H B_ell
-      - accumulate per-(ℓ,rad) energies: sum_m |A_ell|^2
-      - flatten by (ℓ,rad), reorder by order_flat (global centered order), cumulative ratio
-      - save CSV: <basename>_coeff_energy_centered_global.csv with columns: k,ratio
+      - Build FB coefficients B (n_rad, L, 2ℓ+1)
+      - If apply_centering_in_export: center (ℓ=0,m=0): B[:,0,0] -= μ
+      - Project: A_ℓ = U_ℓ^H B_ℓ
+      - Save cumulative energy CSV by global order (k, ratio)
+      - Optionally save per-ℓ A_ℓ in NPZ (with optional row downselection)
     """
     if apply_centering_in_export and mu_l0 is None:
         raise ValueError("mu_l0 must be provided when apply_centering_in_export is True.")
@@ -176,18 +194,35 @@ def export_coeff_energy_centered_global(
 
     v = load_and_normalize(m_path, key)
     z = fle.step1(v)
-    b = fle.step2(z)  # shape: (n_rad, L, 2ℓ+1)
+    b = fle.step2(z)  # (n_rad, L, 2ℓ+1)
 
     if apply_centering_in_export:
         b[:, 0, 0] = b[:, 0, 0] - mu_l0
 
     energies = np.zeros((L, n_rad), dtype=np.float64)
+    coeff_pack = {
+        "meta_N": N_vol,
+        "meta_L": L,
+        "order_flat": order_flat.astype(np.int32),
+        "apply_centering_in_export": bool(apply_centering_in_export),
+    }
+
     for ell in range(L):
         B_ell = b[:, ell, :2*ell + 1]        # (n_rad, 2ℓ+1)
-        U_ell = eigvecs[ell]                 # (n_rad, n_rad), columns = eigenvectors
+        U_ell = eigvecs[ell]                 # (n_rad, n_rad)
         A = U_ell.conj().T @ B_ell           # (n_rad, 2ℓ+1)
         energies[ell] = np.sum(np.abs(A)**2, axis=1)
 
+        if save_coeffs:
+            if coeffs_keep_rows_by_ell is not None:
+                rows = coeffs_keep_rows_by_ell.get(ell, np.array([], dtype=np.int32))
+                A_to_save = A[rows]
+                coeff_pack[f"A_l{ell}"] = A_to_save.astype(np.complex64 if coeffs_complex64 else np.complex128)
+                coeff_pack[f"rows_l{ell}"] = rows.astype(np.int16)
+            else:
+                coeff_pack[f"A_l{ell}"] = A.astype(np.complex64 if coeffs_complex64 else np.complex128)
+
+    # ---- cumulative energy CSV
     ef = energies.flatten()
     ef = ef[order_flat]
     total = float(ef.sum())
@@ -199,6 +234,14 @@ def export_coeff_energy_centered_global(
     os.makedirs(out_dir, exist_ok=True)
     csv_path = os.path.join(out_dir, f"{basename}_coeff_energy_centered_global.csv")
     np.savetxt(csv_path, table, delimiter=",", header="k,ratio", comments="")
+
+    # ---- save coefficients NPZ
+    if save_coeffs:
+        coeff_pack["mu_l0"] = (mu_l0.astype(np.complex64) if (mu_l0 is not None and coeffs_complex64) else mu_l0)
+        tag = "_topK" if (coeffs_keep_rows_by_ell is not None) else "_all"
+        npz_path = os.path.join(out_dir, f"{basename}_coeffs_centered_global{tag}.npz")
+        np.savez_compressed(npz_path, **coeff_pack)
+
     return True
 
 
@@ -213,9 +256,9 @@ def main(
     top_k=1000,
     n_jobs=-1,
     store_as_complex64=True,
-    save_full_eigendecomp=False,   # WARNING: big files if True
-    pbar=True,                     # show tqdm progress bars
-    expect_N=N,                    # sanity check
+    save_full_eigendecomp=SAVE_FULL_EIGENDECOMP,   # now True by default
+    pbar=True,
+    expect_N=N,
 ):
     os.makedirs(out_dir, exist_ok=True)
     mats = get_mat_list(in_dir)
@@ -332,40 +375,52 @@ def main(
         **meta_common
     )
 
-    # ---- per-volume CSV export (centered_global ONLY), with progress bar
-    if EXPORT_CSV:
-        export_workers = (os.cpu_count() or 1) if (EXPORT_N_JOBS in (-1, None, 0)) else int(EXPORT_N_JOBS)
-        if "nvidia" in str(solver).lower():
-            export_workers = 1 if EXPORT_N_JOBS in (-1, None, 0) else export_workers
-
-        print(f"[export] Writing centered_global cumulative energy CSVs for {len(mats)} volumes …")
-        with ThreadPoolExecutor(max_workers=export_workers) as ex:
-            futures = [
-                ex.submit(
-                    export_coeff_energy_centered_global,
-                    m, key, N_vol, L, eps, solver, n_rad,
-                    eigvecs=vec_cg,
-                    order_flat=ord_cg_raw,
-                    out_dir=out_dir,
-                    mu_l0=mu_l0,
-                    apply_centering_in_export=APPLY_CENTERING_IN_EXPORT
-                )
-                for m in mats
-            ]
-            for fut in tqdm(as_completed(futures), total=len(futures), desc="Export CSVs", leave=True):
-                fut.result()  # ensure errors surface
-
-    # (optional) save full eigen-decomposition (centered only) — big!
+    # (ON by default) save full eigen-decomposition (centered only)
     if save_full_eigendecomp:
         np.savez_compressed(
             os.path.join(out_dir, f"full_eigs_N={N_vol}_L={L}_centered_global.npz"),
             eigvals=raw_cg, eigvecs=vec_cg, **cov_meta, mu_l0=mu_l0
         )
 
+    # ---- per-volume CSV + coefficients export
+    if EXPORT_CSV or EXPORT_COEFFS:
+        export_workers = (os.cpu_count() or 1) if (EXPORT_N_JOBS in (-1, None, 0)) else int(EXPORT_N_JOBS)
+        if "nvidia" in str(solver).lower():
+            export_workers = 1 if EXPORT_N_JOBS in (-1, None, 0) else export_workers
+
+        # build rows-to-keep mapping (if requested)
+        keep_rows_by_ell = None
+        if EXPORT_COEFFS and COEFFS_KEEP_TOPK:
+            keep_rows_by_ell = _build_keep_rows_by_ell(ord_cg_raw, n_rad, keep_topK=K)
+
+        what = []
+        if EXPORT_CSV:    what.append("CSV")
+        if EXPORT_COEFFS: what.append("coeffs")
+        print(f"[export] Writing {' + '.join(what)} for {len(mats)} volumes …")
+
+        with ThreadPoolExecutor(max_workers=export_workers) as ex:
+            futures = [
+                ex.submit(
+                    export_coeff_energy_and_projections_centered_global,
+                    m, key, N_vol, L, eps, solver, n_rad,
+                    eigvecs=vec_cg,
+                    order_flat=ord_cg_raw,
+                    out_dir=out_dir,
+                    mu_l0=mu_l0,
+                    apply_centering_in_export=APPLY_CENTERING_IN_EXPORT,
+                    save_coeffs=EXPORT_COEFFS,
+                    coeffs_keep_rows_by_ell=keep_rows_by_ell,
+                    coeffs_complex64=True if COEFFS_COMPLEX64 else False
+                )
+                for m in mats
+            ]
+            for fut in tqdm(as_completed(futures), total=len(futures), desc="Export per-volume", leave=True):
+                fut.result()  # ensure errors surface
+
     # ---------- summary ----------
     print("\n[summary]")
     print(f"  volumes processed: {M}")
-    print(f"  total modes: {L*n_rad}  |  K saved: {K}")
+    print(f"  total modes: {L*n_rad}  |  K (global top modes): {K}")
     print("\n[save] wrote:")
     for fn in (
         f"cov_blocks_N={N_vol}_L={L}_centered_global.npz",
@@ -374,6 +429,11 @@ def main(
         print("  •", os.path.join(out_dir, fn))
     if save_full_eigendecomp:
         print("  •", os.path.join(out_dir, f"full_eigs_N={N_vol}_L={L}_centered_global.npz"))
+    if EXPORT_COEFFS:
+        print("  • Per-volume: *_coeffs_centered_global_{'topK' if COEFFS_KEEP_TOPK else 'all'}.npz")
+    if EXPORT_CSV:
+        print("  • Per-volume: *_coeff_energy_centered_global.csv")
+
 
 if __name__ == "__main__":
     # ----------------------- CONFIG -----------------------
@@ -386,7 +446,7 @@ if __name__ == "__main__":
         top_k=1000,
         n_jobs=-1,               # -1 => use all cores for covariance stage
         store_as_complex64=True,
-        save_full_eigendecomp=True,
+        save_full_eigendecomp=SAVE_FULL_EIGENDECOMP,
         pbar=True,               # turn off if you don't want bars in nohup logs
         expect_N=N,              # sanity-check resolution vs data
     )
