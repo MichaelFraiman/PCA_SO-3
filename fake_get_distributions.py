@@ -34,7 +34,7 @@ except Exception:
     def tqdm(x, **k): return x
 
 # ----------------------- CONFIG -----------------------
-NN         = 64        # resolution N
+NN         = 256        # resolution N
 L_DEFAULT  = 20
 K_TOP_WANT = 200        # use up to this many top modes (must match the saved coeff NPZs)
 BASE_DIR   = f"mat_converted_N={NN}_matrix"        # where top_modes_*.npz lives
@@ -83,7 +83,8 @@ def main():
     #    Example: mat_converted_N=256_eigen_coeffs_top200/top_modes_N=256_L=20_K=1000_centered_global_by_raw/*.npz
     ROOT_DIR = f"mat_converted_N={NN}_eigen_coeffs_top{K_use}"
     SRC_DIR  = os.path.join(ROOT_DIR, top_base)
-    pattern  = os.path.join(SRC_DIR, f"*_N={N0}_eigen_coeffs_top{K_use}.npz")
+    #pattern  = os.path.join(SRC_DIR, f"*_N={N0}_eigen_coeffs_top{K_use}.npz")
+    pattern  = os.path.join(SRC_DIR, f"top_modes_N={N0}_L=*_K=*_centered_global_by_raw.npz")
     files    = sorted(glob.glob(pattern))
     if not files:
         raise SystemExit(f"[error] No per-volume coeff NPZs found under {SRC_DIR} (pattern: {os.path.basename(pattern)})")

@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
-# reconstruct_targets_from_centered_pca.py
+# reconstruct_targets_from_centered_pca_BY_EIGENVOLUME.py
 #
-# Reconstruct target volumes using top-K eigenvolumes from centered-global PCA packs:
-#   top_modes_N=<N>_L=<L>_K=<K>_centered_global_by_raw.npz
+# Reconstruct target volumes using top-K **eigenvolumes** from centered-global PCA packs:
+#   top_modes_N=<N>_L=<L>_K=<Kpairs>_centered_global_by_raw.npz
 #
 # For each target .mat and for each K in K_LIST:
 #   1) Forward transform to coefficients b
 #   2) Center only the (ℓ=0, m=0) column by subtracting mu_l0
-#   3) Project onto the first K PCA modes (global order across ℓ,r), accumulating
-#      b̂' (centered coefficients)
-#   4) Uncenter: add mu_l0 back to the (ℓ=0, m=0) column
-#   5) Synthesize and save as .mrc
+#   3) Build an expanded list of actual eigenvolumes: one item per (ℓ,r,m)
+#      in descending eigenvalue order (pairs repeated 2ℓ+1 times).
+#   4) Project onto the first K expanded eigenvolumes, accumulating b̂' (centered)
+#   5) Uncenter: add mu_l0 back to the (ℓ=0, m=0) column
+#   6) Synthesize and save as .mrc
 #
 # Notes:
 #   • Parallelization is per (NPZ × target) pair. Each worker reuses its FLE and (if needed) dense B.
@@ -21,7 +22,7 @@ import glob
 import gc
 import numpy as np
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from typing import List, Tuple, Optional, Dict, Any
+from typing import List, Tuple
 
 from tqdm.auto import tqdm
 import mrcfile
@@ -29,7 +30,7 @@ from scipy.io import loadmat
 
 # ============================== CONFIG ==============================
 
-NN = 124  # grid size N; used to resolve default paths
+NN = 64  # grid size N; used to resolve default paths
 
 # Where your NPZs (created by the global-centering covariance script) live:
 NPZ_DIR = f"mat_converted_N={NN}_matrix"
@@ -47,22 +48,20 @@ NPZ_GLOB = os.path.join(NPZ_DIR, f"top_modes_N={NN}_L=*_*centered_global_by_raw.
 RESCALED_DIR = f"mat_converted_N={NN}"
 
 # Target basenames (without .mat) to reconstruct:
-#TARGETS = ["1avo", "1dgb", "5cpi", "1fzf", "2qtb"]
 TARGETS = ["1avo", "1dgb"]
 
-# K values to reconstruct for each target (PCA order across all ℓ,r modes):
-K_LIST = [5, 20, 100]
+# K values to reconstruct for each target
+K_LIST = [5, 10, 20, 50, 100, 200]
 
 # Output directory:
 OUT_DIR = f"mat_converted_N={NN}_reconstructed_mrc"
 
-# MRC voxel size metadata (units optional, e.g., Å if you know it):
+# MRC voxel size metadata (units optional):
 VOXEL_SIZE = 1.0
 VOXEL_DTYPE = np.float32
 
 # Parallelization:
 #   -1 → auto (CPU count); on GPU synthesize we force 1 unless you override below.
-#MAX_WORKERS = -1 something is wrong here
 MAX_WORKERS = 5
 
 # ====================================================================
@@ -93,7 +92,7 @@ def mat_load_and_normalize(path: str) -> Tuple[np.ndarray, str]:
     key = next(k for k in data if not k.startswith("__"))
     v = np.ascontiguousarray(data[key])
     vmax = np.max(np.abs(v))
-    return (v if vmax == 0 else (v / vmax)).astype(np.float32), key
+    return (v if vmax == 0 else (v / vmax)).astype(np.float32, copy=False), key
 
 def build_fle(N: int, L: int, eps: float, solver: str) -> FLEBasis3D:
     return FLEBasis3D(
@@ -101,27 +100,21 @@ def build_fle(N: int, L: int, eps: float, solver: str) -> FLEBasis3D:
         mode="complex", sph_harm_solver=solver, reduce_memory=True
     )
 
-def probe_b_shape(fle: FLEBasis3D) -> Tuple[int, int, int]:
-    """Get exact b tensor shape used by fle.step2 (rectangular last dim)."""
-    v0 = np.zeros((fle.N, fle.N, fle.N), dtype=np.float32)
-    z0 = fle.step1(v0)
-    b0 = fle.step2(z0)
-    return b0.shape  # (n_rad, L, 2*L-1) in this codebase
-
 
 # -------------------------- core ops (worker) --------------------------
 
 def reconstruct_target_worker(npz_path: str, target_basename: str, k_list: List[int]) -> List[str]:
     """
-    Worker routine: for a single (npz, target) pair, reconstruct target for each K in k_list.
+    Worker routine: for a single (npz, target) pair, reconstruct target for each K in k_list
+    using **expanded** eigenvolumes (ℓ,r,m).
     Returns list of written file paths.
     """
     # Load PCA pack (centered_global_by_raw)
     data = np.load(npz_path, allow_pickle=False)
-    top_vecs = data["top_vecs"]        # (K, n_rad) complex
-    top_ell  = data["top_ell"]         # (K,)
-    top_rad  = data["top_rad"]         # (K,)
-    lambdas  = data["top_vals_raw"]    # (K,)
+    top_vecs = data["top_vecs"]        # (Kpairs, n_rad) complex (radial eigenvectors)
+    top_ell  = data["top_ell"]         # (Kpairs,)
+    top_rad  = data["top_rad"]         # (Kpairs,)
+    lambdas  = data["top_vals_raw"]    # (Kpairs,)
     N        = int(data["N"])
     L        = int(data["L"])
     n_rad    = int(data["n_rad"])
@@ -147,7 +140,6 @@ def reconstruct_target_worker(npz_path: str, target_basename: str, k_list: List[
     has_synthesize = hasattr(fle, "synthesize")
     B_dense = None
     if not has_synthesize:
-        # step3 + create_denseB fallback (RAM-aware: build once per worker)
         try:
             B_dense = fle.create_denseB(numthread=1)
         except Exception as e:
@@ -157,10 +149,9 @@ def reconstruct_target_worker(npz_path: str, target_basename: str, k_list: List[
     z = fle.step1(v)
     b = fle.step2(z)                        # shape (n_rad, L, 2*L-1)
     if b.shape[0] != n_rad:
-        # Defense if pack n_rad mismatches; usually shouldn't happen
         raise RuntimeError(f"[recon] n_rad mismatch: pack {n_rad} vs b {b.shape[0]}")
     b_centered = b.copy()
-    b_centered[:, 0, 0] = b_centered[:, 0, 0] - mu_l0  # <<< global centering (only ℓ=0,m=0)
+    b_centered[:, 0, 0] = b_centered[:, 0, 0] - mu_l0  # only (ℓ=0,m=0)
 
     # Prepare outputs
     pack_base = os.path.splitext(os.path.basename(npz_path))[0]
@@ -172,25 +163,48 @@ def reconstruct_target_worker(npz_path: str, target_basename: str, k_list: List[
     save_mrc(orig_mrc, v)
     written.append(orig_mrc)
 
-    # Per-K reconstructions (sequential inside worker to control RAM)
-    K_avail = top_vecs.shape[0]
+    # -------- Build expanded eigenvolume order (one item per (pair r, m)) --------
+    # Pair order already sorted by λ desc; we expand each pair into its (2ℓ+1) m-entries.
+    # expanded: list of (r_index, m_idx) where m_idx ∈ [0 .. 2ℓ]
+    expanded: List[Tuple[int, int]] = []
+    for r in range(top_vecs.shape[0]):
+        ell = int(top_ell[r])
+        expanded.extend((r, mm) for mm in range(2*ell + 1))
+
+    E_total = len(expanded)  # total # of actual eigenvolumes available from this pack
+
+    # -------- Precompute all projection coefficients α_{r,mm} = <u_r, b_centered[:,ℓ_r,mm]> --------
+    # Store as a list of arrays, one per pair r (length 2ℓ+1 each).
+    proj_coeffs: List[np.ndarray] = []
+    for r in range(top_vecs.shape[0]):
+        ell = int(top_ell[r])
+        u_r = top_vecs[r].astype(np.complex128, copy=False)  # (n_rad,)
+        width = 2*ell + 1
+        # Dot u_r with each m-column at this ℓ
+        # b_centered[:, ell, mm] has shape (n_rad,)
+        alphas = np.empty(width, dtype=np.complex128)
+        for mm in range(width):
+            alphas[mm] = np.vdot(u_r, b_centered[:, ell, mm])
+        proj_coeffs.append(alphas)
+
+    # -------- Per-K reconstructions using ONLY the first K expanded eigenvolumes --------
     for K in k_list:
-        K_use = min(int(K), K_avail)
+        K_use = int(min(K, E_total))
 
         # Allocate centered reconstruction coefficients b̂' (same shape as b)
-        n_rad0, L0, maxw0 = b_centered.shape
         b_hat_centered = np.zeros_like(b_centered)
 
-        # Accumulate projections for the first K modes (global order)
-        for r in range(K_use):
+        # Accumulate contributions for the first K expanded eigenvolumes
+        # Each expanded item contributes only to its specific (ℓ_r, m) column.
+        used = 0
+        for (r, mm) in expanded:
+            if used >= K_use:
+                break
             ell = int(top_ell[r])
-            u   = top_vecs[r].astype(np.complex128, copy=False)  # (n_rad,)
-
-            # Project each m at this ℓ onto the rank-1 subspace spanned by u
-            width = 2*ell + 1
-            for mm in range(width):
-                alpha = np.vdot(u, b_centered[:, ell, mm])       # complex scalar
-                b_hat_centered[:, ell, mm] += alpha * u
+            u_r = top_vecs[r].astype(np.complex128, copy=False)
+            alpha = proj_coeffs[r][mm]
+            b_hat_centered[:, ell, mm] += alpha * u_r
+            used += 1
 
         # Uncenter back (only ℓ=0, m=0)
         b_hat = b_hat_centered
@@ -200,12 +214,12 @@ def reconstruct_target_worker(npz_path: str, target_basename: str, k_list: List[
         if has_synthesize:
             vol = fle.synthesize(b_hat)
         else:
-            a = fle.step3(b_hat)                # coefficients compatible with dense B
+            a = fle.step3(b_hat)
             vol = B_dense.dot(a).reshape(N, N, N)
 
         vol = np.real(vol).astype(np.float32, copy=False)
 
-        out_mrc = os.path.join(out_sub, f"{target_basename}_N={N}_approx-K={K_use}.mrc")
+        out_mrc = os.path.join(out_sub, f"{target_basename}_N={N}_approx-KEIG={K_use}.mrc")
         save_mrc(out_mrc, vol)
         written.append(out_mrc)
 
@@ -222,11 +236,10 @@ def main():
     ensure_dir(OUT_DIR)
 
     # Resolve NPZ list
-    npz_list: List[str] = []
     if NPZ_PATHS:
-        npz_list = [p for p in NPZ_PATHS if os.path.exists(p)]
+        npz_list: List[str] = [p for p in NPZ_PATHS if os.path.exists(p)]
     else:
-        npz_list = sorted(glob.glob(NPZ_GLOB))
+        npz_list: List[str] = sorted(glob.glob(NPZ_GLOB))
 
     if not npz_list:
         raise RuntimeError(f"No NPZ files found. Checked list={NPZ_PATHS} and glob={NPZ_GLOB}")
@@ -249,11 +262,9 @@ def main():
     else:
         workers = int(MAX_WORKERS)
 
-    # If any pack uses a GPU solver, be conservative with workers (VRAM)
-    # We’ll downscale to 1 unless user explicitly set MAX_WORKERS.
+    # If any pack uses a GPU solver, be conservative with workers (VRAM) unless user forced MAX_WORKERS.
     if MAX_WORKERS in (-1, None, 0):
         try:
-            # Peek at the first NPZ to read 'solver'
             s = str(np.load(npz_list[0], allow_pickle=False)["solver"])
             if "cuda" in s.lower() or "nvidia" in s.lower():
                 workers = 1
@@ -263,15 +274,12 @@ def main():
     print(f"[info] Jobs: {len(tasks)} | workers: {workers}")
     print(f"[info] Output dir: {OUT_DIR}")
 
-    # Parallel map over tasks with a clean progress bar
     written_all: List[str] = []
     with ProcessPoolExecutor(max_workers=workers) as ex:
         futs = [ex.submit(reconstruct_target_worker, npz, tgt, K_LIST) for (npz, tgt, _) in tasks]
         for fut in tqdm(as_completed(futs), total=len(futs), desc="Reconstructions"):
-            paths = fut.result()
-            written_all.extend(paths)
+            written_all.extend(fut.result())
 
-    # Summary
     print("[done] Wrote:")
     for p in written_all:
         print("  •", p)
