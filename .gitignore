@@ -2,7 +2,12 @@
 keys/
 docs/
 p/
+paper/
 *_doc.py
+convert_pdb2mat.py
 mkdocs.yml
 *.sh
 _*
+final_scree.py
+fake_generate_exp.py
+fake_get_distributions_exp.py

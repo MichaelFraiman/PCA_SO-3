@@ -26,7 +26,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 # --------------------- CONFIG (edit here) ---------------------
-NN        = 64                          # Resolution used by your pipeline
+NN        = 22                          # Resolution used by your pipeline
 FIRST_K   = 100                         # Plot d = 1..FIRST_K
 FIG_DPI   = 150
 CSV_DIR   = f"mat_converted_N={NN}_matrix"

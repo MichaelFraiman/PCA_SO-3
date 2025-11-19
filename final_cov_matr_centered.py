@@ -34,7 +34,7 @@ from fle_3d import FLEBasis3D  # your library
 
 # =================== TOP-LEVEL CONFIG ===================
 # Resolution "N" also controls default input/output folder names below.
-N = 32
+N = 22
 DEFAULT_IN_DIR  = f"mat_converted_N={N}"
 DEFAULT_OUT_DIR = f"mat_converted_N={N}_matrix"
 

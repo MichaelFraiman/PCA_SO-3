@@ -34,7 +34,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from tqdm.auto import tqdm
 
 # ----------------------- TOP-LEVEL CONFIG -----------------------
-N         = 256
+N         = 22
 L         = 20
 EPS       = 1e-6
 

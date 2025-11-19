@@ -33,7 +33,7 @@ import mrcfile
 TOP_MODES_NPZ = None  # e.g. "mat_converted_N=64_matrix/top_modes_N=64_L=20_K=1000_centered_global_by_raw.npz"
 
 # Option 2: if TOP_MODES_NPZ is None, set NN and auto-glob within the matrix folder
-NN = 64
+NN = 22
 MATRIX_DIR = f"mat_converted_N={NN}_matrix"
 NPZ_GLOB = os.path.join(MATRIX_DIR, f"top_modes_N={NN}_L=*_*centered_global_by_raw.npz")
 

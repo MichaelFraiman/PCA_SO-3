@@ -23,7 +23,7 @@ os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
 
 # ── user settings ────────────────────────────────────────────────────────────
 PDB_DIR      = "pdb_cache"             # where your .pdb.gz files live
-GRID_N       = 128                     # output grid will be GRID_N³
+GRID_N       = 22                     # output grid will be GRID_N³
 VOXEL_SIZE   = 2.0                     # Å per voxel
 GAUSS_SIGMA  = 1.0                     # Å Gaussian blur per atom
 OUT_DIR      = f"mat_converted_N={GRID_N}"

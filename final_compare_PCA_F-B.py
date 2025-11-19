@@ -26,8 +26,8 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from typing import Dict, List, Tuple, Optional
 
 # ----------------------- CONFIG -----------------------
-NN = 256
-FIRST_K = 500
+NN = 22
+FIRST_K = 100
 
 PCA_DIR        = f"mat_converted_N={NN}_matrix"         # *_coeffs_centered_global_all.npz
 FB_SORTED_DIR  = f"mat_converted_N={NN}_energy_fle"     # magnitude-sorted FB (|a| sorting)

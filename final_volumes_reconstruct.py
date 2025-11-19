@@ -30,7 +30,7 @@ from scipy.io import loadmat
 
 # ============================== CONFIG ==============================
 
-NN = 64  # grid size N; used to resolve default paths
+NN = 22  # grid size N; used to resolve default paths
 
 # Where your NPZs (created by the global-centering covariance script) live:
 NPZ_DIR = f"mat_converted_N={NN}_matrix"
