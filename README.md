@@ -2,7 +2,8 @@
 
 Hi =)
 
-This code accompanies the paper: `https://arxiv.org/abs/2510.18827`.
+This code accompanies the paper: Michael Fraiman, Paulina Hoyos, Tamir Bendory, Joe Kileel, Oscar Micklein, Nir Sharon, Amit Singer, "SO(3)-invariant PCA with application to molecular data", arXiv:2510.18827 (2025)."
+
 If you want to use the code or cite it, please cite the paper.
 
 *The `.mat` files need to be in the `mat_converted_N={NN}`* folder, where `NN` is the resolution (that is, the volumes are $N \times N \times N$)
