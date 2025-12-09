@@ -18,8 +18,10 @@ If you want to use the code or cite it, please cite the paper.
 
 5. `final_expand_FB.py` expands the target volumes is the Spherical Fourier--Bessel basis.
 
-6. `final_compare_PCA_F-B.py` plots three curves showing cumulative energy: PCA, SFB sorted, SFB u-sorted.
+6. `final_energy_four-bes_basis.py` plots the Fourier--Bessel energy.
 
-7. `final_expand_volumes_in_PCA_basis.py` saves the top `K_TOP_WANT` coefficients of the PCA expansion.
+7. `final_compare_PCA_F-B.py` plots three curves showing cumulative energy: PCA, SFB sorted, SFB u-sorted.
 
-8. `fake_get_distributions.py` finds the distributions of the coefficients in the PCA basis.
+8. `final_expand_volumes_in_PCA_basis.py` saves the top `K_TOP_WANT` coefficients of the PCA expansion.
+
+9. `fake_get_distributions.py` finds the distributions of the coefficients in the PCA basis.
