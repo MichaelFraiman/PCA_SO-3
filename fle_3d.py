@@ -1,3 +1,10 @@
+# fle_3d.py  (patched for macOS / NumPy↔Torch interop issues)
+#
+# Key patch:
+#   In precomp() under sph_harm_solver == "nvidia_torch",
+#   force cost/weights to be NumPy arrays BEFORE using NumPy ops/slicing.
+#   Also replace np.flip(...) with [::-1].copy() to avoid torch slicing issues.
+
 import numpy as np
 import scipy.special as spl
 import scipy.sparse as spr
@@ -5,6 +12,29 @@ from scipy.fft import dct, idct
 import finufft
 from scipy.io import loadmat
 import os
+
+
+# --- Spherical harmonics compatibility (SciPy 1.17+) -------------------------
+# SciPy <= 1.16 provided scipy.special.sph_harm(m, n, theta, phi) with:
+#   theta = azimuth, phi = polar (colatitude)
+# SciPy >= 1.15 provides scipy.special.sph_harm_y(n, m, theta, phi) with:
+#   theta = polar (colatitude), phi = azimuth
+# SciPy 1.17 removed sph_harm.
+#
+# This helper follows the *modern* convention used by sph_harm_y:
+#   _sph_harm_y(n, m, theta, phi)
+#     theta = polar (colatitude) in [0, pi]
+#     phi   = azimuth           in [0, 2*pi)
+#
+# For older SciPy, it falls back to sph_harm by swapping angle arguments.
+
+def _sph_harm_y(n, m, theta, phi):
+    if hasattr(spl, 'sph_harm_y'):
+        return spl.sph_harm_y(n, m, theta, phi)
+    # Older SciPy: sph_harm(m, n, theta_azimuth, phi_polar)
+    return spl.sph_harm(m, n, phi, theta)
+
+# -----------------------------------------------------------------------------
 
 
 class FLEBasis3D:
@@ -26,7 +56,7 @@ class FLEBasis3D:
     #   reduce_memory   If True, reduces the number of radial points in defining
     #                   NUFFT grids, and does an alternative interpolation to
     #                   compensate. To reproduce the tables and figures of the
-    #                   paper, set this to False. 
+    #                   paper, set this to False.
     def __init__(
         self,
         N,
@@ -57,13 +87,13 @@ class FLEBasis3D:
         self.expand_rel_tol = expand_rel_tol
         self.expand_eps = expand_eps
 
-        #sets numsparse and maxitr heuristically
+        # sets numsparse and maxitr heuristically
         numsparse = 32
         if not maxitr:
             tmp = 1 + int(6 * np.log2(N))
 
         if eps >= 1e-10:
-            numsparse = 32 
+            numsparse = 32
             if not maxitr:
                 tmp = 1 + int(4 * np.log2(N))
 
@@ -76,12 +106,12 @@ class FLEBasis3D:
             numsparse = 8
             if not maxitr:
                 tmp = 1 + int(np.log2(N))
- 
+
         if not maxitr:
             maxitr = tmp
 
-        #sets maxitr heuristically
-        maxitr = max(maxitr,int(np.log(1/expand_eps)/expand_alpha)+1)
+        # sets maxitr heuristically
+        maxitr = max(maxitr, int(np.log(1 / expand_eps) / expand_alpha) + 1)
 
         self.maxitr = maxitr
 
@@ -187,7 +217,7 @@ class FLEBasis3D:
             )
 
             if tmp2 < epsdis:
-                if tmp < 1:  
+                if tmp < 1:
                     break
 
         S = max(S2, 2 * self.lmax, 18)
@@ -208,7 +238,6 @@ class FLEBasis3D:
             1.1e-15,
         )
 
-
         if self.sph_harm_solver == "nvidia_torch":
             import torch
             import torch_harmonics as th
@@ -218,10 +247,8 @@ class FLEBasis3D:
             self.torch = torch
             self.th = th
 
-
             n_phi = S + 1
-             
-            n_theta = S  
+            n_theta = S
 
             ##### Added this to make the symmetry trick in step 1 work
             if n_phi % 2 == 1:
@@ -238,12 +265,22 @@ class FLEBasis3D:
                 cost, weights = self.th.quadrature.clenshaw_curtiss_weights(
                     n_theta, -1, 1
                 )
-                theta = np.flip(np.arccos(cost))
             elif grid == "legendre-gauss":
                 cost, weights = self.th.quadrature.legendre_gauss_weights(
                     n_theta, -1, 1
                 )
-                theta = np.flip(np.arccos(cost))
+
+            # ---- PATCH: force torch tensors -> NumPy BEFORE NumPy ops/slicing ----
+            if isinstance(cost, torch.Tensor):
+                cost = cost.detach().cpu().numpy()
+            if isinstance(weights, torch.Tensor):
+                weights = weights.detach().cpu().numpy()
+            cost = np.asarray(cost, dtype=np.float64)
+            weights = np.asarray(weights, dtype=np.float64)
+
+            # Avoid torch slicing issues (PyTorch forbids negative step):
+            theta = np.arccos(cost)[::-1].copy()
+            # -------------------------------------------------------------------
 
             device = "cpu"
             # device = self.torch.device("cuda" if self.torch.cuda.is_available() else "cpu")
@@ -273,28 +310,23 @@ class FLEBasis3D:
             jl.seval("using LinearAlgebra")
             jl.seval("using LinearAlgebra: ldiv! as ldiv")
 
-            F = jl.FastSphericalHarmonics.sphrandn(jl.Float64, S, 2*S-1)
+            F = jl.FastSphericalHarmonics.sphrandn(jl.Float64, S, 2 * S - 1)
 
-            
             self.P = jl.FastSphericalHarmonics.plan_sph2fourier(F)
             self.PA = jl.FastSphericalHarmonics.plan_sph_analysis(F)
             self.PS = jl.FastSphericalHarmonics.plan_sph_synthesis(F)
-
 
             self.jl = jl
             self.step2 = self.step2_fastTransforms
             self.step2_H = self.step2_H_fastTransforms
 
-
             n_phi = 2 * S - 1
             n_theta = S
-
 
             phi = 2 * np.pi * np.arange(n_phi) / n_phi
             theta = np.pi * (np.arange(n_theta) + 0.5) / n_theta  # uniform
             mu = jl.FastTransforms.chebyshevmoments1(jl.Float64, n_theta)
             self.weights = jl.FastTransforms.fejerweights1(mu)
-
 
         self.phi = phi
         self.theta = theta
@@ -342,7 +374,6 @@ class FLEBasis3D:
             idlm_list[l][md].append(i)
 
         self.idlm_list = idlm_list
-
 
         ######## Create NUFFT plans
         lmd0 = np.min(lmds)
@@ -396,7 +427,7 @@ class FLEBasis3D:
             isign=-1,
             dtype=np.complex128,
         )
-        self.plan2.setpts(y, x, z) # this ordering gives the ordering of the grid points in the paper
+        self.plan2.setpts(y, x, z)  # this ordering gives the ordering of the grid points in the paper
 
         nufft_type = 1
         self.plan1 = finufft.Plan(
@@ -407,7 +438,7 @@ class FLEBasis3D:
             isign=1,
             dtype=np.complex128,
         )
-        self.plan1.setpts(y, x, z) # this ordering gives the ordering of the grid points in the paper
+        self.plan1.setpts(y, x, z)  # this ordering gives the ordering of the grid points in the paper
 
         # Source points for interpolation, i.e., Chebyshev nodes in the radial direction
         # The way we set up the interpolation below is with source and target radii
@@ -473,7 +504,7 @@ class FLEBasis3D:
 
     def create_denseB(self, numthread=1):
         #####
-        # NOTE THE FOLLOWING ISSUE WITH SPL.SPH_HARM:
+        # NOTE THE FOLLOW_toggle1 ISSUE WITH SPL.SPH_HARM:
         # https://github.com/scipy/scipy/issues/7778
         # We therefore use pyshtools for large m,
         # although pyshtools is slower. The cutoff m = 75
@@ -490,13 +521,12 @@ class FLEBasis3D:
             lmd = self.lmds[i]
             c = self.cs[i]
 
-
             if (np.abs(m) <= 75) or (self.N <= 32):
                 if m >= 0:
                     psi[i] = (
                         lambda r, t, p, c=c, l=l, m=m, lmd=lmd: c
                         * spl.spherical_jn(l, lmd * r)
-                        * spl.sph_harm(m, l, p, t)
+                        * _sph_harm_y(l, m, t, p)
                         * (r <= 1)
                     )
                 else:
@@ -504,7 +534,7 @@ class FLEBasis3D:
                         lambda r, t, p, c=c, l=l, m=m, lmd=lmd: c
                         * spl.spherical_jn(l, lmd * r)
                         * (-1) ** int(m)
-                        * np.conj(spl.sph_harm(np.abs(m), l, p, t))
+                        * np.conj(_sph_harm_y(l, np.abs(m), t, p))
                         * (r <= 1)
                     )
 
@@ -529,21 +559,19 @@ class FLEBasis3D:
                     psi[i] = (
                         lambda r, t, p, c=c, l=l, m=m, lmd=lmd: c
                         * spl.spherical_jn(l, lmd * r)
-                        * (-1) ** int(m)
-                        * np.conj(
-                            spharm_lm(
-                                l,
-                                np.abs(m),
-                                t,
-                                p,
-                                kind="complex",
-                                degrees=False,
-                                csphase=-1,
-                                normalization="ortho",
-                            )
+                        * spharm_lm(
+                            l,
+                            np.abs(m),
+                            t,
+                            p,
+                            kind="complex",
+                            degrees=False,
+                            csphase=-1,
+                            normalization="ortho",
                         )
                         * (r <= 1)
                     )
+
         self.psi = psi
 
         # Evaluate eigenfunctions
@@ -554,7 +582,7 @@ class FLEBasis3D:
         z = np.arange(-R, R + self.N % 2)
         xs, ys, zs = np.meshgrid(
             x, y, z
-        ) 
+        )
         xs = xs / R
         ys = ys / R
         zs = zs / R
@@ -636,39 +664,31 @@ class FLEBasis3D:
         cs_table = data["cs"]
         # Sweep over lkm in the following order: k in {1,kmax}, l in {0,lmax}, m in {0,-1,1,-2, ...,-l,l}
 
-        # If we notice that for a given k and l, the current root
-        # is larger than the largest one in the list (and the list has length at least ne), then all other l for same k
-        # and all other k for same l will be superfluous, so l will only have to up to this particular l - 1.
-
         ind = 0
         stop_l = max_l
         largest_lmd = 0
         for k in range(1, max_k):
             for l in range(stop_l):
                 m_range = 2 * l + 1
-                ks[ind : ind + m_range] = k
-                ls[ind : ind + m_range] = l
+                ks[ind: ind + m_range] = k
+                ls[ind: ind + m_range] = l
                 m_indices = np.arange(m_range)
-                ms[ind : ind + m_range] = (-1) ** m_indices * (
+                ms[ind: ind + m_range] = (-1) ** m_indices * (
                     (m_indices + 1) // 2
                 )
-                mds[ind : ind + m_range] = 2 * np.abs(
-                    ms[ind : ind + m_range]
-                ) - (ms[ind : ind + m_range] < 0)
+                mds[ind: ind + m_range] = 2 * np.abs(
+                    ms[ind: ind + m_range]
+                ) - (ms[ind: ind + m_range] < 0)
                 new_lmd = roots_table[l, k - 1]
-                lmds[ind : ind + m_range] = new_lmd
-                cs[ind : ind + m_range] = cs_table[l, k - 1]
+                lmds[ind: ind + m_range] = new_lmd
+                cs[ind: ind + m_range] = cs_table[l, k - 1]
                 ind += m_range
                 if (ind >= ne) and (new_lmd > largest_lmd):
                     stop_l = l
                     break
                 largest_lmd = max(largest_lmd, new_lmd)
 
-
-
-
         idx = np.argsort(lmds[:ind], kind="stable")
-
 
         ls = ls[idx[:ne]]
         ks = ks[idx[:ne]]
@@ -691,14 +711,13 @@ class FLEBasis3D:
         if ne <= 1:
             ne = 1
 
-        # # take top ne values (with the new ne)
+        # take top ne values (with the new ne)
         ls = ls[:ne]
         ks = ks[:ne]
         ms = ms[:ne]
         lmds = lmds[:ne]
         mds = mds[:ne]
         cs = cs[:ne]
-
 
         return ls, ks, ms, mds, lmds, cs, ne
 
@@ -810,7 +829,6 @@ class FLEBasis3D:
     def evaluate_t(self, f):
         f = np.copy(f).reshape(self.N1, self.N1, self.N1)
 
-
         if self.N > self.N1:
             f = np.pad(f, ((0, 1), (0, 1), (0, 1)))
 
@@ -818,14 +836,11 @@ class FLEBasis3D:
         f[self.idx] = 0
         f = f.flatten()
 
-
         a = self.step3(self.step2(self.step1(f))) * self.h
         if not self.complexmode:
             a = self.c2r @ a.flatten()
 
         return a
-
-   
 
     def step1(self, f):
 
@@ -843,17 +858,13 @@ class FLEBasis3D:
             if self.force_real:
                 z0 = z0.reshape(self.n_radial, self.n_theta, self.n_phi // 2)
                 z[:, :, : self.n_phi // 2] = z0
-                z[:, ::-1, self.n_phi // 2 :] = np.conj(z0)
+                z[:, ::-1, self.n_phi // 2:] = np.conj(z0)
             else:
                 z = z0.reshape(self.n_radial, self.n_theta, self.n_phi)
-
 
         z = z.flatten()
 
         return z
-
-
-
 
     def step2_torch(self, z):
         # https://github.com/NVIDIA/torch-harmonics
@@ -891,10 +902,10 @@ class FLEBasis3D:
             Fr = self.jl.Matrix(np.real(z[q, :, :]))
             Fi = self.jl.Matrix(np.imag(z[q, :, :]))
 
-            Gr = self.PA*Fr
+            Gr = self.PA * Fr
             tmpr = np.complex128(self.jl.ldiv(self.P, Gr))
 
-            Gi = self.PA*Fi
+            Gi = self.PA * Fi
             tmpi = np.complex128(self.jl.ldiv(self.P, Gi))
 
             b[q, :, :] = self.fastTransforms_reshape_order_t(
@@ -908,25 +919,20 @@ class FLEBasis3D:
 
         return b
 
-
-
-
-
     def torch_reshape_order_t(self, b):
         # converts the order of m returned by torch to 0,-1,1,-2,2,-3,3,...
         # torch only computes the coefficients for m >= 0, but can use
         # alpha_{l,-m} = (-1)**m*\overline{alpha_{l,m}} for real-valued structures.
         # We therefore separate the input to torch_step2 into real and imaginary parts.
 
-
         s = b.shape
         bn = np.zeros((s[0], s[1], 2 * s[2] - 1), dtype=np.complex128)
 
         bn[:, :, 0] = b[:, :, 0]
 
-        bn[:, :, 1 : (2 * s[2] - 1) : 4] = np.conj(b[:, :, 1 : s[2] : 2]) * (-1)
-        bn[:, :, 3 : (2 * s[2] - 1) : 4] = np.conj(b[:, :, 2 : s[2] : 2])
-        bn[:, :, 2 : (2 * s[2]) : 2] = b[:, :, 1 : s[2]]
+        bn[:, :, 1:(2 * s[2] - 1):4] = np.conj(b[:, :, 1:s[2]:2]) * (-1)
+        bn[:, :, 3:(2 * s[2] - 1):4] = np.conj(b[:, :, 2:s[2]:2])
+        bn[:, :, 2:(2 * s[2]):2] = b[:, :, 1:s[2]]
 
         return bn
 
@@ -969,17 +975,6 @@ class FLEBasis3D:
             bz = np.zeros(b.shape)
             b = np.concatenate((b, bz), axis=0)
             b = idct(b, axis=0, type=2) * 2 * b.shape[0]
-
-        #the below is a faster version of
-        # a = np.zeros(self.ne, dtype=np.complex128)
-        # for i in range(self.ne):
-        #     l = self.ls[i]
-        #     md = self.mds[i]
-        #     a[self.idlm_list[l][md]] = (
-        #         (self.A3[l] @ b[:, l, md])[: len(self.idlm_list[l][md])]
-        #     )
-        # a = a * self.cs
-        # a = a.flatten()
 
         a = np.zeros(self.ne, dtype=np.complex128)
         for l in range(self.lmax + 1):
@@ -1028,7 +1023,6 @@ class FLEBasis3D:
                 f = f.reshape(self.N, self.N, self.N)
                 f[self.idx] = 0
                 f = f.flatten()
-                
 
         return f
 
@@ -1051,9 +1045,6 @@ class FLEBasis3D:
 
         return z
 
-
-
-
     def step2_H_fastTransforms(self, b):
 
         for l in range(self.lmax + 1):
@@ -1069,9 +1060,8 @@ class FLEBasis3D:
         for q in range(self.n_radial):
             b1 = bq[q, :, :]
             b1 = self.jl.Matrix(b1)
-            G=self.P*b1
-            H = self.PS*G
-            # z[q, :, :] = np.complex128(self.jl.sph_evaluate(self.jl.Matrix(b1)))
+            G = self.P * b1
+            H = self.PS * G
             z[q, :, :] = np.complex128(H)
 
         for i in range(len(self.weights)):
@@ -1079,21 +1069,19 @@ class FLEBasis3D:
 
         return z
 
-    def my_pad(self,v,lv,k):
+    def my_pad(self, v, lv, k):
         if k == 0:
             return v
-        w = np.zeros((lv+k,),dtype=np.complex128)
+        w = np.zeros((lv + k,), dtype=np.complex128)
         w[:lv] = v
         return w
-    
+
     def step3_H(self, a):
 
- 
         a = a * self.h
         a = a.flatten()
         a = a * self.cs
 
- 
         b = np.zeros(
             (self.n_interp, self.lmax + 1, 2 * self.lmax + 1),
             dtype=np.complex128,
@@ -1104,18 +1092,13 @@ class FLEBasis3D:
         for l in range(self.lmax + 1):
             m_range = 2 * l + 1
 
-            #the below is a faster version of
-            # for md in range(m_range):
-            #     b[:, l, md] = (
-            #         np.conj(self.A3_T[l][:, : len(self.idlm_list[l][md])])
-            #         @ a[self.idlm_list[l][md]]
-            #     )
-
             tli = self.idlm_list[l]
             ts = self.A3_T[l].shape[1]
 
-            tmp = np.concatenate([self.my_pad(a[tli[md]],len(tli[md]), ts-len(tli[md])) for md in range(m_range)]).reshape(-1,m_range,order='F')
-            b[:, l, :m_range] = np.conj(self.A3_T[l]@tmp)    
+            tmp = np.concatenate(
+                [self.my_pad(a[tli[md]], len(tli[md]), ts - len(tli[md])) for md in range(m_range)]
+            ).reshape(-1, m_range, order='F')
+            b[:, l, :m_range] = np.conj(self.A3_T[l] @ tmp)
 
         if self.n_interp > self.n_radial:
             b = dct(b, axis=0, type=2)
@@ -1127,17 +1110,13 @@ class FLEBasis3D:
     def torch_reshape_order(self, b):
         # converts the column order of b from 0,-1,1,-2,2,-3,3,...
         # to the order required by torch.
-        # torch only computes the coefficients for m >= 0, but can use
-        # alpha_{l,-m} = (-1)**m*\overline{alpha_{l,m}} for real-valued structures.
-        # We therefore separated the input to torch_step2 into real and imaginary parts,
-        # and now need to invert this separation
 
         s = b.shape
-        tmp1 = b[:, :, 0 : s[2] : 2]
+        tmp1 = b[:, :, 0: s[2]: 2]
         # Every other one here has to have their sign flipped
         signs = [(-1) ** (k + 1) for k in range(self.lmax)]
         tmp2 = np.concatenate(
-            (b[:, :, 0].reshape(s[0], s[1], 1), b[:, :, 1 : s[2] : 2] * signs),
+            (b[:, :, 0].reshape(s[0], s[1], 1), b[:, :, 1: s[2]: 2] * signs),
             axis=2,
         )
         b1 = 0.5 * np.real(tmp1 + tmp2) + 1j * 0.5 * np.imag(tmp1 - tmp2)
@@ -1154,9 +1133,6 @@ class FLEBasis3D:
             for m in range(l + 1):
                 indpos = self.jl.sph_mode(l, m)
                 indneg = self.jl.sph_mode(l, -m)
-                # julia has 1-indexing and the package does real-valued harmonics
-                # The convention below is different from ordinary conventions for
-                # real-valued harmonics, but seems to be what they are using.
                 if m > 0:
                     bn[:, indpos[1] - 1, indpos[2] - 1] = (
                         1
@@ -1175,33 +1151,30 @@ class FLEBasis3D:
                 else:
                     bn[:, l, m] = b[:, l, m]
         return bn
-    
-    
+
     def expand(self, f, toltype='l1linf'):
         b = self.evaluate_t(f)
-        a0 = self.expand_alpha*b
+        a0 = self.expand_alpha * b
         if toltype == 'l1linf':
-            no = np.linalg.norm(a0,np.Inf)
+            no = np.linalg.norm(a0, np.Inf)
             n1 = 1
         elif toltype == 'l2':
-            no = np.linalg.norm(a0,2)
+            no = np.linalg.norm(a0, 2)
             n1 = 2
         for iter in range(self.maxitr):
             a0old = a0
-            a0 = a0 - self.expand_alpha*(self.evaluate_t(self.evaluate(a0))) + self.expand_alpha*b
-            if np.linalg.norm(a0-a0old,n1)/no < self.expand_rel_tol:
+            a0 = a0 - self.expand_alpha * (self.evaluate_t(self.evaluate(a0))) + self.expand_alpha * b
+            if np.linalg.norm(a0 - a0old, n1) / no < self.expand_rel_tol:
                 break
         return a0
 
     def lowpass(self, a, bandlimit):
         threshold = (
             bandlimit * np.pi / 2
-        )  
+        )
         ne = np.searchsorted(self.lmds, threshold, side="left") - 1
         a[ne::] = 0
         return a
-    
-
 
     def barycentric_interp_sparse(self, x, xs, ys, s):
         # https://people.maths.ox.ac.uk/trefethen/barycentric.pdf
