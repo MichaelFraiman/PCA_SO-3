@@ -217,11 +217,6 @@
 
 #set text(size: 18pt)
 
-Expand each volume in a _spherical Fourier–Bessel basis_ (spherical Bessel functions $times$ spherical harmonics):
-
-$ phi(r, theta, phi.alt) = sum_(ell = 0)^L sum_(m=-ell)^ell sum_(s=1)^(S(ell)) f_(ell m s) j_(ell s)(r) Y_ell^m (theta, phi.alt) $
-
-#v(4pt)
 
 The $"SO"(3)$-invariant covariance operator:
 
@@ -230,6 +225,13 @@ $
 $
 
 #v(4pt)
+
+Expand each volume in a _spherical Fourier–Bessel basis_:
+
+$ phi(r, theta, phi.alt) = sum_(ell = 0)^L sum_(m=-ell)^ell sum_(s=1)^(S(ell)) f_(ell m s) j_(ell s)(r) Y_ell^m (theta, phi.alt) $
+
+#v(4pt)
+
 
 By Wigner $D$-matrix orthogonality, the matrix of $cal(C)$ in the Fourier–Bessel basis is block-diagonal:
 
