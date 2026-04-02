@@ -7,6 +7,7 @@ paper/
 *_doc.py
 *.sh
 _*
+*.pdf
 
 pdb_cache/*
 !pdb_cache/1avo.pdb.gz
