@@ -26,14 +26,20 @@
 
   #v(22pt)
 
-  #text(size: 15pt)[
-    Michael Fraiman#super[$star.op$] #h(8pt)
-    Paulina Hoyos#super[$dagger$] #h(8pt)
-    Tamir Bendory#super[$section$] #h(8pt)
-    Joe Kileel#super[$dagger$] #h(8pt)
-    Oscar Mickelin#super[$diamond.stroked$] #h(8pt)
-    Nir Sharon#super[$star.op$] #h(8pt)
-    Amit Singer#super[$ast$]
+  #text(size: 16pt)[
+    #text(weight: "bold")[Speaker:] Michael Fraiman#super[$star.op$]
+  ]
+
+  #v(10pt)
+
+  #text(size: 14pt)[
+    #text(weight: "bold")[Joint work with:]
+    Paulina Hoyos#super[$dagger$] #h(1em)
+    Tamir Bendory#super[$section$] #h(1em)
+    Joe Kileel#super[$dagger$] #h(1em)
+    Oscar Mickelin#super[$diamond.stroked$] #h(1em)
+    Nir Sharon#super[$star.op$] #h(1em)
+    Amit Singer#super[$ast$] #h(1em)
   ]
 
   #v(22pt)
@@ -57,12 +63,17 @@
 // ── Slide 2: The Setting ─────────────────────────────────────────────────────
 #pagebreak()
 
+#set page(
+  numbering: "1",
+  number-align: bottom + right,
+)
+
 #text(size: 26pt, weight: "bold", fill: title-color)[Setting & Goal]
 #v(4pt)
 #line(length: 100%, stroke: (paint: accent, thickness: 1pt))
 #v(12pt)
 
-#set text(size: 16pt)
+#set text(size: 15pt)
 
 #let light-blue = rgb("#EBF2FB")
 
@@ -107,7 +118,7 @@
   note-box[
     #text(weight: "bold")[Setting.]
     We observe $n$ three-dimensional functions
-    $phi^(1), dots, phi^(n): RR^3 -> CC$,
+    $phi^((1)), dots, phi^((n)): RR^3 -> RR$,
     representing molecular volumes / proteins, each up to an unknown rotation.
   ],
   note-box[
@@ -169,16 +180,37 @@
 #text(size: 26pt, weight: "bold", fill: title-color)[The Problems]
 #v(4pt)
 #line(length: 100%, stroke: (paint: accent, thickness: 1pt))
-#v(12pt)
+#v(8pt)
 
-#set text(size: 18pt)
+#set text(size: 16pt)
 
 #let light-blue-b = rgb("#EBF2FB")
 #let warn-bg = rgb("#FDF0F0")
+#let solve-bg = rgb("#EEF8F0")
 
-#let bottleneck-box(number, step-title, step-body, ..problems) = block(
+#let issue-box(body) = block(
   width: 100%,
-  inset: (x: 12pt, y: 10pt),
+  inset: (x: 8pt, y: 6pt),
+  radius: 5pt,
+  fill: warn-bg,
+  stroke: (paint: luma(180), thickness: 0.5pt),
+)[
+  #text(size: 15pt, weight: "bold", fill: rgb("#B42318"))[Issue:] #h(4pt) #body
+]
+
+#let solution-box(body) = block(
+  width: 100%,
+  inset: (x: 8pt, y: 6pt),
+  radius: 5pt,
+  fill: solve-bg,
+  stroke: (paint: rgb("#A6D5AE"), thickness: 0.5pt),
+)[
+  #text(size: 15pt, weight: "bold", fill: rgb("#166534"))[Solution:] #h(4pt) #body
+]
+
+#let bottleneck-box(number, step-title, step-body, ..callouts) = block(
+  width: 100%,
+  inset: (x: 12pt, y: 6pt),
   radius: 6pt,
   fill: light-blue-b,
   stroke: (paint: accent, thickness: 0.7pt),
@@ -198,17 +230,9 @@
     ],
     [
       #text(weight: "bold")[#step-title ] #step-body
-      #for p in problems.pos() [
-        #v(5pt)
-        #block(
-          width: 100%,
-          inset: (x: 10pt, y: 8pt),
-          radius: 5pt,
-          fill: warn-bg,
-          stroke: (paint: luma(180), thickness: 0.5pt),
-        )[
-          #text(size: 18pt, weight: "bold", fill: rgb("#B42318"))[Issue:] #h(4pt) #p
-        ]
+      #for callout in callouts.pos() [
+        #v(3pt)
+        #callout
       ]
     ],
   )
@@ -216,21 +240,35 @@
 
 #stack(
   dir: ttb,
-  spacing: 16pt,
+  spacing: 8pt,
 
   bottleneck-box("2")[Form a covariance operator.][
     Construct a covariance operator from the centered data.
   ][
-    Computing its matrix representation in some arbitrary basis is prohibitive when $D$ is large.
+    #issue-box[
+      Computing its matrix representation in some arbitrary basis is prohibitive when $D$ is large.
+    ]
   ][
-    Proteins appear in arbitrary orientations, therefore,
+    #issue-box[
+      Proteins appear in arbitrary orientations, therefore,
       the covariance operator must be invariant under $"SO"(3)$.
+    ]
+  ][
+    #solution-box[
+      Average each protein over all rotations when forming the covariance, yielding an $"SO"(3)$-invariant operator.
+    ]
   ],
 
   bottleneck-box("3")[Diagonalize the covariance operator.][
     Extract its leading eigenvectors.
   ][
-    Full diagonalization is prohibitive in high dimensions.
+    #issue-box[
+      Full diagonalization is prohibitive in high dimensions.
+    ]
+  ][
+    #solution-box[
+      In the spherical Fourier-Bessel basis, the operator is block diagonal, with repeated blocks.
+    ]
   ],
 )
 
@@ -284,14 +322,14 @@ Each block $C_ell in CC^(S(ell) times S(ell))$ is small and can be diagonalized 
 
 #set text(size: 18pt)
 
-
+/*
 #v(4pt)
 
 Each local block eigenvector lifts to an eigenvector of $C$ by padding with
 zeros.
 
 #v(8pt)
-
+*/
 #let c1-fill = rgb("#EAF2FB")
 #let c2-fill = rgb("#D7E6F8")
 #let c3-fill = rgb("#C3D9F2")
@@ -350,11 +388,11 @@ zeros.
 #let v2e = vector-box(vz, vz, vz, vz, vz, vz, vz, vz, u2)
 #let vmore = vector-box(vz, vz, vz, vz, vdots, vz, vz, vz, vz)
 
-#align(horizon)[
+#align(horizon + center)[
   #grid(
-    columns: (auto, auto, 1fr),
+    columns: (auto, auto),
     column-gutter: 18pt,
-    align: (horizon, horizon, horizon),
+    align: (horizon, horizon,),
     [$ C = $],
     block(
       inset: 8pt,
@@ -378,7 +416,7 @@ zeros.
         z, z, z, z, z, z, z, z, b3, z,
         z, z, z, z, z, z, z, z, z, mdots,
       )
-    ],
+    ],/*
     [
       #set text(size: 18pt)
       #text(weight: "bold")[Eigenvectors]
@@ -389,7 +427,7 @@ zeros.
         align: (top, top),
         v0, v1a, v1b, v1c, v2a, v2b, v2c, v2d, v2e, vmore,
       )
-    ],
+    ],*/
   )
 ]
 
@@ -436,16 +474,17 @@ zeros.
     #text(size: 20pt, weight: "bold", fill: accent)[$O(N^3 log^2 N)$]
   ],
 
+  complexity-box("Invariant PCA (out method)")[
+    Block covariances + block eigendecompositions:
+    #v(6pt)
+    #text(size: 18pt, weight: "bold", fill: accent)[$O(S^2 L^2 + S^3 L)$]
+  ],
+
+
   complexity-box("Naive Computation")[
     Full dense covariance + eigendecomposition:
     #v(6pt)
     #text(size: 18pt, weight: "bold", fill: accent)[$O(S^2 L^4) + O(S^3 L^6)$]
-  ],
-
-  complexity-box("Invariant PCA")[
-    Block covariances + block eigendecompositions:
-    #v(6pt)
-    #text(size: 18pt, weight: "bold", fill: accent)[$O(S^2 L^2 + S^3 L)$]
   ],
 )
 
@@ -533,14 +572,15 @@ zeros.
 )
 
 #align(center)[
-  #block(width: 88%)[
+  #block(width: 94%)[
     #align(center)[
-      #text(size: 12pt)[
-        Sample volume: #text(weight: "bold")[`1fzf`]. #h(8pt)
+      #text(size: 11pt)[
+        Sample volume: #text(weight: "bold")[`1fzf`].
         Curves:
         #text(weight: "bold", fill: pca-color)[PCA], #h(6pt)
-        #text(weight: "bold", fill: bh-sort-color)[sorted SFB], #h(6pt)
-        #text(weight: "bold", fill: bh-root-color)[SFB sorted by $u_(ell s)$].
+        #text(weight: "bold", fill: bh-sort-color)[SFB sorted by coefficient magnitude], #h(6pt)
+        #text(weight: "bold", fill: bh-root-color)[SFB sorted by increasing $u_(ell s)$
+        ($s$-th positive root of $j_ell$)].
       ]
     ]
   ]
@@ -598,3 +638,15 @@ zeros.
 ]
 
 #set text(size: 20pt)
+
+// ── Slide 10: Thank You ─────────────────────────────────────────────────────
+#pagebreak()
+
+#set page(numbering: none)
+
+#align(center + horizon)[
+  
+   #text(size: 38pt, weight: "bold", fill: title-color)[
+    Thank you!
+  ]
+]
