@@ -314,8 +314,8 @@ zeros.
 #let empty-fill = rgb("#FCFDFE")
 
 #let matrix-cell(body: [], fill: empty-fill) = block(
-  width: 29pt,
-  height: 20pt,
+  width: 31pt,
+  height: 31pt,
   inset: 0pt,
   radius: 3pt,
   fill: fill,
@@ -328,7 +328,7 @@ zeros.
 #let b1 = matrix-cell(body: [$C_0$], fill: c1-fill)
 #let b2 = matrix-cell(body: [$C_1$], fill: c2-fill)
 #let b3 = matrix-cell(body: [$C_2$], fill: c3-fill)
-#let mdots = matrix-cell(body: [#text(size: 12pt, fill: muted)[...]])
+#let mdots = matrix-cell(body: [#text(size: 16pt, weight: "bold", fill: muted)[...]])
 
 #let vector-cell(body: [], fill: empty-fill) = block(
   width: 29pt,
@@ -369,9 +369,15 @@ zeros.
 #align(horizon + center)[
   #grid(
     columns: (auto, auto),
-    column-gutter: 18pt,
-    align: (horizon, horizon,),
-    [$ C = $],
+    column-gutter: 28pt,
+    align: (horizon, horizon),
+    [
+      #align(center + horizon, text(size: 1.5em)[
+        $
+          C = plus.o.big_(ell=0)^L (I_(2 ell + 1) times.o C_ell) = 
+        $
+      ])
+    ],
     block(
       inset: 8pt,
       radius: 8pt,
@@ -452,7 +458,7 @@ zeros.
     #text(size: 20pt, weight: "bold", fill: accent)[$O(N^3 log^2 N)$]
   ],
 
-  complexity-box("Invariant PCA (out method)")[
+  complexity-box("Invariant PCA (our method)")[
     Block covariances + block eigendecompositions:
     #v(6pt)
     #text(size: 18pt, weight: "bold", fill: accent)[$O(S^2 L^2 + S^3 L)$]
@@ -477,8 +483,8 @@ zeros.
 )[
   #text(weight: "bold", fill: title-color)[Nyquist Regime]
   #v(4pt)
-  For covariance computation, with $S = Theta(N)$ and $L = O(N)$, #h(8pt)
-  #text(size: 20pt, weight: "bold", fill: accent)[$O(N^4)$ vs. $O(N^9)$]
+  The total cost of the PCA with $S = Theta(N)$ and $L = O(N)$, #h(8pt)
+  #text(size: 20pt, weight: "bold")[$O(N^4)$ vs. $O(N^9)$]
 ]
 
 #set text(size: 21pt)
