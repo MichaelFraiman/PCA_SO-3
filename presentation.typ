@@ -5,34 +5,44 @@
 )
 
 #set par(justify: false)
-#set text(font: "Libertinus Serif", size: 20pt)
+#set text(font: "Libertinus Serif", size: 21pt)
 
 #let title-color = rgb("#0F2747")
 #let accent = rgb("#2E5EAA")
 #let muted = rgb("#666666")
+#let issue-color = rgb("#B42318")
+#let solution-color = rgb("#166534")
 
+#let corner-logo(width: 1.55in) = place(
+  top + right,
+  dx: -6pt,
+  dy: 4pt,
+)[
+  #image("p/isbi26-logo-hr_color.png", width: width)
+]
+
+#corner-logo()
 #align(center)[
-  #v(12%)
+  #v(9%)
 
   #text(size: 28pt, weight: "bold", fill: title-color)[
     SO(3)-Invariant PCA
   ]
 
-  #v(8pt)
 
   #text(size: 28pt, weight: "bold", fill: title-color)[
     with Application to Molecular Data
   ]
 
-  #v(22pt)
+  #v(1fr)
 
-  #text(size: 16pt)[
+  #text(size: 20pt)[
     #text(weight: "bold")[Speaker:] Michael Fraiman#super[$star.op$]
   ]
 
-  #v(10pt)
+  #v(8pt)
 
-  #text(size: 14pt)[
+  #text(size: 16pt)[
     #text(weight: "bold")[Joint work with:]
     Paulina Hoyos#super[$dagger$] #h(1em)
     Tamir Bendory#super[$section$] #h(1em)
@@ -42,21 +52,15 @@
     Amit Singer#super[$ast$] #h(1em)
   ]
 
-  #v(22pt)
+  #v(1fr)
 
-  #text(size: 16pt, fill: muted)[
-    Presented at IEEE ISBI 2026
-  ]
-
-  #v(16pt)
-
-  #set text(size: 12pt)
+  #set text(size: 14pt)
   #super[$star.op$]School of Mathematical Sciences, Tel Aviv University, Israel \
   #super[$dagger$]Department of Mathematics, UT Austin, USA \
   #super[$section$]School of Electrical and Computer Engineering, Tel Aviv University, Israel \
   #super[$diamond.stroked$]Yau Mathematical Sciences Center, Tsinghua University, China \
   #super[$ast$]Program in Applied and Computational Mathematics and Dept. of Mathematics, Princeton University, USA
-  #set text(size: 20pt)
+  #set text(size: 21pt)
 
 ]
 
@@ -71,30 +75,27 @@
 #text(size: 26pt, weight: "bold", fill: title-color)[Setting & Goal]
 #v(4pt)
 #line(length: 100%, stroke: (paint: accent, thickness: 1pt))
-#v(12pt)
+#v(8pt)
 
-#set text(size: 15pt)
+#set text(size: 18pt)
 
 #let light-blue = rgb("#EBF2FB")
 
 #let step-box(number, body) = block(
   width: 100%,
-  inset: (x: 12pt, y: 8pt),
-  radius: 6pt,
-  fill: light-blue,
-  stroke: (paint: accent, thickness: 0.7pt),
+  inset: (x: 0pt, y: 0pt),
 )[
   #grid(
     columns: (auto, 1fr),
-    column-gutter: 10pt,
-    align: (horizon, horizon),
+    column-gutter: 14pt,
+    align: (top, top),
     block(
-      width: 26pt, height: 26pt,
+      width: 30pt, height: 30pt,
       radius: 50%,
       fill: accent,
     )[
       #align(center + horizon)[
-        #text(size: 14pt, weight: "bold", fill: white)[#number]
+        #text(size: 16pt, weight: "bold", fill: white)[#number]
       ]
     ],
     body,
@@ -131,32 +132,32 @@
 #v(6pt)
 
 #align(center)[
-  #image("p/PCA.png", width: 55%)
+  #image("p/PCA.png", width: 45%)
 ]
 
-#set text(size: 20pt)
+#set text(size: 21pt)
 
 // ── Slide 3: The Method ──────────────────────────────────────────────────────
 #pagebreak()
 
-#text(size: 26pt, weight: "bold", fill: title-color)[The Standard Method]
-#v(4pt)
+#text(size: 26pt, weight: "bold", fill: title-color)[The Standard PCA Approach]
+#v(2pt)
 #line(length: 100%, stroke: (paint: accent, thickness: 1pt))
 #v(8pt)
 
-#set text(size: 18pt)
+#set text(size: 21pt)
 
 #stack(
   dir: ttb,
-  spacing: 8pt,
+  spacing: 50pt,
 
   step-box("1")[
-    #text(weight: "bold")[Data in high dimensions.]
+    #text(weight: "bold")[Data in High Dimensions.]
     We have $x_1, dots, x_n in RR^D$ near a low-dimensional affine subspace.
   ],
 
   step-box("2")[
-    #text(weight: "bold")[Center & form a covariance operator.]
+    #text(weight: "bold")[Center & Form a Covariance Operator.]
     Build an operator that captures the variability of the centered data.
   ],
 
@@ -172,66 +173,43 @@
   ],
 )
 
-#set text(size: 20pt)
+#set text(size: 21pt)
 
 // ── Slide 3: The Bottlenecks ──────────────────────────────────────────────────
 #pagebreak()
 
-#text(size: 26pt, weight: "bold", fill: title-color)[The Problems]
-#v(4pt)
+#text(size: 26pt, weight: "bold", fill: title-color)[The Issues & The Solutions]
+#v(2pt)
 #line(length: 100%, stroke: (paint: accent, thickness: 1pt))
 #v(8pt)
 
-#set text(size: 16pt)
+#set text(size: 20pt)
 
-#let light-blue-b = rgb("#EBF2FB")
-#let warn-bg = rgb("#FDF0F0")
-#let solve-bg = rgb("#EEF8F0")
-
-#let issue-box(body) = block(
-  width: 100%,
-  inset: (x: 8pt, y: 6pt),
-  radius: 5pt,
-  fill: warn-bg,
-  stroke: (paint: luma(180), thickness: 0.5pt),
-)[
-  #text(size: 15pt, weight: "bold", fill: rgb("#B42318"))[Issue:] #h(4pt) #body
-]
-
-#let solution-box(body) = block(
-  width: 100%,
-  inset: (x: 8pt, y: 6pt),
-  radius: 5pt,
-  fill: solve-bg,
-  stroke: (paint: rgb("#A6D5AE"), thickness: 0.5pt),
-)[
-  #text(size: 15pt, weight: "bold", fill: rgb("#166534"))[Solution:] #h(4pt) #body
+#let problem-line(label, color, body) = [
+  #text(size: 18pt, weight: "bold", fill: color)[#label:] #h(4pt) #body
 ]
 
 #let bottleneck-box(number, step-title, step-body, ..callouts) = block(
   width: 100%,
-  inset: (x: 12pt, y: 6pt),
-  radius: 6pt,
-  fill: light-blue-b,
-  stroke: (paint: accent, thickness: 0.7pt),
+  inset: (x: 0pt, y: 0pt),
 )[
   #grid(
     columns: (auto, 1fr),
-    column-gutter: 10pt,
+    column-gutter: 14pt,
     align: (top, top),
     block(
-      width: 26pt, height: 26pt,
+      width: 30pt, height: 30pt,
       radius: 50%,
       fill: accent,
     )[
       #align(center + horizon)[
-        #text(size: 14pt, weight: "bold", fill: white)[#number]
+        #text(size: 16pt, weight: "black", fill: white)[#number]
       ]
     ],
     [
-      #text(weight: "bold")[#step-title ] #step-body
+      #text(weight: "black")[#step-title ] #step-body
       #for callout in callouts.pos() [
-        #v(3pt)
+        #v(0pt)
         #callout
       ]
     ],
@@ -240,49 +218,49 @@
 
 #stack(
   dir: ttb,
-  spacing: 8pt,
+  spacing: 40pt,
 
-  bottleneck-box("2")[Form a covariance operator.][
+  bottleneck-box("2")[Form a Covariance Operator.][
     Construct a covariance operator from the centered data.
   ][
-    #issue-box[
-      Computing its matrix representation in some arbitrary basis is prohibitive when $D$ is large.
+    #problem-line("⛔ Issue", issue-color)[
+      Computing its matrix representation in an arbitrary basis is prohibitive for large $D$.
     ]
   ][
-    #issue-box[
+    #problem-line("⛔ Issue", issue-color)[
       Proteins appear in arbitrary orientations, therefore,
       the covariance operator must be invariant under $"SO"(3)$.
     ]
   ][
-    #solution-box[
+    #problem-line("🔧 Solution", solution-color)[
       Average each protein over all rotations when forming the covariance, yielding an $"SO"(3)$-invariant operator.
     ]
   ],
 
-  bottleneck-box("3")[Diagonalize the covariance operator.][
+  bottleneck-box("3")[Diagonalize the Covariance Operator.][
     Extract its leading eigenvectors.
   ][
-    #issue-box[
+    #problem-line("⛔ Issue", issue-color)[
       Full diagonalization is prohibitive in high dimensions.
     ]
   ][
-    #solution-box[
+    #problem-line("🔧 Solution", solution-color)[
       In the spherical Fourier-Bessel basis, the operator is block diagonal, with repeated blocks.
     ]
   ],
 )
 
-#set text(size: 20pt)
+#set text(size: 21pt)
 
 // ── Slide 5: Our Approach ────────────────────────────────────────────────────
 #pagebreak()
 
 #text(size: 26pt, weight: "bold", fill: title-color)[Our Approach]
-#v(4pt)
+#v(2pt)
 #line(length: 100%, stroke: (paint: accent, thickness: 1pt))
-#v(12pt)
+#v(8pt)
 
-#set text(size: 18pt)
+#set text(size: 18.5pt)
 
 
 The $"SO"(3)$-invariant *covariance operator*:
@@ -291,13 +269,13 @@ $
   cal(C) = frac(1, n) sum_(i=1)^n integral_("SO"(3)) (R dot phi^((i)) - phi_"mean") overline((R dot phi^((i)) - phi_"mean")) dif R
 $
 
-#v(4pt)
+#v(2pt)
 
 Expand each volume in a _spherical Fourier–Bessel basis_:
 
 $ phi(r, theta, phi.alt) = sum_(ell = 0)^L sum_(m=-ell)^ell sum_(s=1)^(S(ell)) f_(ell m s) j_(ell s)(r) Y_ell^m (theta, phi.alt) $
 
-#v(4pt)
+#v(2pt)
 
 
 By Wigner $D$-matrix orthogonality, the matrix of $cal(C)$ in the spherical Fourier–Bessel basis is block-diagonal:
@@ -310,7 +288,7 @@ $
 
 Each block $C_ell in CC^(S(ell) times S(ell))$ is small and can be diagonalized independently.
 
-#set text(size: 20pt)
+#set text(size: 21pt)
 
 // ── Slide 6: Visual Structure of C ──────────────────────────────────────────
 #pagebreak()
@@ -320,7 +298,7 @@ Each block $C_ell in CC^(S(ell) times S(ell))$ is small and can be diagonalized 
 #line(length: 100%, stroke: (paint: accent, thickness: 1pt))
 #v(12pt)
 
-#set text(size: 18pt)
+#set text(size: 19pt)
 
 /*
 #v(4pt)
@@ -431,7 +409,7 @@ zeros.
   )
 ]
 
-#set text(size: 20pt)
+#set text(size: 21pt)
 
 // ── Slide 7: Computational Complexity ───────────────────────────────────────
 #pagebreak()
@@ -441,7 +419,7 @@ zeros.
 #line(length: 100%, stroke: (paint: accent, thickness: 1pt))
 #v(12pt)
 
-#set text(size: 17pt)
+#set text(size: 18pt)
 
 #text(fill: black)[
   $N$ — grid side length, #h(10pt)
@@ -503,7 +481,7 @@ zeros.
   #text(size: 20pt, weight: "bold", fill: accent)[$O(N^4)$ vs. $O(N^9)$]
 ]
 
-#set text(size: 20pt)
+#set text(size: 21pt)
 
 // ── Slide 8: Numerical Results ───────────────────────────────────────────────
 #pagebreak()
@@ -513,7 +491,7 @@ zeros.
 #line(length: 100%, stroke: (paint: accent, thickness: 1pt))
 #v(8pt)
 
-#set text(size: 15pt)
+#set text(size: 16pt)
 
 #let pca-color = rgb("#1f77b4")
 #let bh-sort-color = rgb("#ff7f0e")
@@ -522,7 +500,7 @@ zeros.
 #align(left)[
   #block(width: 100%)[
     #align(left)[
-      #text(size: 18pt)[
+      #text(size: 19pt)[
         For the expansion $phi = sum_(j=1)^D alpha_j v_j$ in an orthonormal basis
         $V = (v_1, dots, v_D)$, we compute:
       ]
@@ -554,10 +532,10 @@ zeros.
   inset: 0mm,
 )[
   #align(center)[
-    #text(size: 14pt, weight: "bold", fill: title-color)[#title]
+    #text(size: 15pt, weight: "bold", fill: title-color)[#title]
   ]
   #align(center)[
-    #image(path, width: 64%)
+    #image(path, width: 60%)
   ]
 ]
 
@@ -574,7 +552,7 @@ zeros.
 #align(center)[
   #block(width: 94%)[
     #align(center)[
-      #text(size: 11pt)[
+      #text(size: 12pt)[
         Sample volume: #text(weight: "bold")[`1fzf`].
         Curves:
         #text(weight: "bold", fill: pca-color)[PCA], #h(6pt)
@@ -586,7 +564,7 @@ zeros.
   ]
 ]
 
-#set text(size: 20pt)
+#set text(size: 21pt)
 
 // ── Slide 9: Volume Reconstructions ──────────────────────────────────────────
 #pagebreak()
@@ -596,12 +574,12 @@ zeros.
 #line(length: 100%, stroke: (paint: accent, thickness: 1pt))
 #v(8pt)
 
-#set text(size: 18pt)
+#set text(size: 19pt)
 
 #grid(
   columns: (1fr, 1fr, 1fr, 1fr, 1fr),
   column-gutter: 8pt,
-  row-gutter: 8pt,
+  row-gutter: 6pt,
   align: (top, top),
 
   [#align(center)[#text(weight: "bold", fill: title-color)[Reference]]],
@@ -610,25 +588,25 @@ zeros.
   [#align(center)[#text(weight: "bold", fill: title-color)[$d = 20$]]],
   [#align(center)[#text(weight: "bold", fill: title-color)[$d = 100$]]],
 
-  [#align(center)[#image("paper/p/pdb1.png", width: 82%)]],
-  [#align(center)[#image("paper/p/exp1.png", width: 82%)]],
-  [#align(center)[#image("paper/p/ap1-10.png", width: 82%)]],
-  [#align(center)[#image("paper/p/ap1-20.png", width: 82%)]],
-  [#align(center)[#image("paper/p/ap1-100.png", width: 82%)]],
+  [#align(center)[#image("paper/p/pdb1.png", width: 78%)]],
+  [#align(center)[#image("paper/p/exp1.png", width: 78%)]],
+  [#align(center)[#image("paper/p/ap1-10.png", width: 78%)]],
+  [#align(center)[#image("paper/p/ap1-20.png", width: 78%)]],
+  [#align(center)[#image("paper/p/ap1-100.png", width: 78%)]],
 
-  [#align(center)[#image("paper/p/pdb2.png", width: 82%)]],
-  [#align(center)[#image("paper/p/exp2.png", width: 82%)]],
-  [#align(center)[#image("paper/p/ap2-10.png", width: 82%)]],
-  [#align(center)[#image("paper/p/ap2-20.png", width: 82%)]],
-  [#align(center)[#image("paper/p/ap2-100.png", width: 82%)]],
+  [#align(center)[#image("paper/p/pdb2.png", width: 78%)]],
+  [#align(center)[#image("paper/p/exp2.png", width: 78%)]],
+  [#align(center)[#image("paper/p/ap2-10.png", width: 78%)]],
+  [#align(center)[#image("paper/p/ap2-20.png", width: 78%)]],
+  [#align(center)[#image("paper/p/ap2-100.png", width: 78%)]],
 )
 
-#v(6pt)
+#v(4pt)
 
 #align(center)[
   #block(width: 95%)[
     #align(center)[
-      #text(size: 16pt)[
+      #text(size: 17pt)[
         $N = 128$. Top row: #text(weight: "bold")[`1avo`]. Bottom row:
         #text(weight: "bold")[`1dgb`]. Left to right: reference volume,
         spherical Fourier–Bessel expansion, and PCA reconstructions with #box[$d = 10, 20, 100$.]
@@ -637,13 +615,14 @@ zeros.
   ]
 ]
 
-#set text(size: 20pt)
+#set text(size: 21pt)
 
 // ── Slide 10: Thank You ─────────────────────────────────────────────────────
 #pagebreak()
 
 #set page(numbering: none)
 
+#corner-logo(width: 1.4in)
 #align(center + horizon)[
   
    #text(size: 38pt, weight: "bold", fill: title-color)[
