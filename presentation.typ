@@ -139,7 +139,7 @@
 // ── Slide 3: The Method ──────────────────────────────────────────────────────
 #pagebreak()
 
-#text(size: 26pt, weight: "bold", fill: title-color)[The Method]
+#text(size: 26pt, weight: "bold", fill: title-color)[The Standard Method]
 #v(4pt)
 #line(length: 100%, stroke: (paint: accent, thickness: 1pt))
 #v(8pt)
